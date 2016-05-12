@@ -2,16 +2,26 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/stat.h>
+//#include <sys/types.h>
+#include <sys/file.h>
 
 int workingTime;
 int parkingSpaces;
 
+#define BUFSIZE 128
 #define NUM_CONTROLLER   4
 
 
 void *entrancePoints(void *args)
 {
+    char fifoName[BUFSIZE];
+    sprintf(fifoName, "fifo%s", (char *)args);
+
     printf("Controller: %s\n", (char *) args);
+
+    mkfifo(fifoName, 0660);
+    //int fd = open(fifoName, O_RDONLY);
     return NULL;
 }
 
@@ -36,7 +46,7 @@ int main(int argc, char* argv[])
     {
         pthread_create(&threads[i], NULL, entrancePoints, (void *)fifoNames[i]);
     }
-    
+
     pthread_exit(0);
     return 0;
 }
