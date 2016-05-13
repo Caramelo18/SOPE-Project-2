@@ -10,6 +10,7 @@
 
 #define NAMESIZE 10
 #define NUM_ENTRANCES   4
+#define MAXTHREADS 300
 
 unsigned int durationPeriod;
 unsigned int minInterval;
@@ -21,6 +22,8 @@ struct carInfo
     int parkingTime;
 };
 
+struct carInfo carInfos[MAXTHREADS];
+
 void *carThread(void *arg)
 {
     pthread_t ownThread = pthread_self();
@@ -31,9 +34,19 @@ void *carThread(void *arg)
     }
     struct carInfo *car = (struct carInfo*) arg;
     printf("thr: car: %c%d - time: %d\n", car->direction, car->number, car->parkingTime);
+
+    // open the correct FIFO
     char fifoName[6];
     sprintf(fifoName, "fifo%c", car->direction);
-//    printf("fifoname: %s\n", fifoName);
+    int fd;
+    do
+    {
+        fd = open(fifoName, O_WRONLY);
+        if(fd == -1)
+            sleep(1);
+    } while(fd == -1);
+
+    write(fd, car, sizeof(struct carInfo));
     return NULL;
 }
 
@@ -78,7 +91,7 @@ int main(int argc, char* argv[])
     time_t begin, end;
     char *fifoNames[NUM_ENTRANCES] = {"N", "S", "E", "W"};
     int probabilities[10] = {0,0,0,0,0,1,1,1,2,2};
-//    int carNumbers[4] = {0, 0, 0, 0};
+    //    int carNumbers[4] = {0, 0, 0, 0};
     int carNumber = 0;
     int index;
     int sleepTime = probabilities[rand() % 10] * minInterval;
@@ -95,16 +108,15 @@ int main(int argc, char* argv[])
             ++carNumber;
             int parkTime = ((rand() % 10) + 1) * minInterval;
             sleepTime = probabilities[rand() % 10] * minInterval;
-        //    printf("car: %s%d - time: %d\n", direction, carNumber, parkTime);
+            //printf("car: %s%d - time: %d\n", direction, carNumber, parkTime);
             begin = end;
 
             pthread_t newThread;
-            struct carInfo car;
-            car.direction = *direction;
-            car.number = carNumber;
-            car.parkingTime = parkTime;
+            carInfos[carNumber].direction = *direction;
+            carInfos[carNumber].number = carNumber;
+            carInfos[carNumber].parkingTime = parkTime;
 
-            pthread_create(&newThread, NULL, carThread, (void *)&car);
+            pthread_create(&newThread, NULL, carThread, (void *)&carInfos[carNumber]);
         }
     }
 

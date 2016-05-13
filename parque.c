@@ -14,6 +14,13 @@ unsigned int maxSpaces;
 
 #define NUM_ENTRANCES   4
 
+struct carInfo
+{
+    char direction;
+    int number;
+    int parkingTime;
+};
+
 void alarm_handler(int signo)
 {
     printf("Time's up\n");
@@ -22,12 +29,19 @@ void alarm_handler(int signo)
 
 void *entrancePoints(void *arg)
 {
-    char fifoName[6]; //tipo nao era preciso fazer tao grande porque sabes que vai ser so "fifoN"
+    char fifoName[6];
     sprintf(fifoName, "fifo%s", (char *)arg);
     printf("Controller: %s\n", fifoName);
     int fd;
     mkfifo(fifoName, 0660);
     fd = open(fifoName, O_RDONLY);
+    struct carInfo car;
+    int n;
+    do
+    {
+        n = read(fd, &car, sizeof(struct carInfo));
+        printf("car: %c%d - time: %d\n", car.direction, car.number, car.parkingTime);
+    } while(n > 0);
     close(fd);
     unlink(fifoName);
     return NULL;
