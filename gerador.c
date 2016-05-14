@@ -23,6 +23,7 @@ struct carInfo
     char direction;
     int number;
     int parkingTime;
+    char fifoName[15];
 };
 
 struct carInfo carInfos[MAXTHREADS];
@@ -37,18 +38,19 @@ void *carThread(void *arg)
     }
 
     struct carInfo *car = (struct carInfo*) arg;
-    printf("thr: car: %c%d - time: %d\n", car->direction, car->number, car->parkingTime);
+    //printf("thr: car: %c%d - time: %d - own fifo: %s\n", car->direction, car->number, car->parkingTime, car->fifoName);
+
+    char fifoName[6], semName[6];
+    sprintf(semName, "%s%c", SEM_NAME, car->direction);
 
     // open the correct FIFO
-    char fifoName[6], semName[6];
     sprintf(fifoName, "fifo%c", car->direction);
-    sprintf(semName, "%s%c", SEM_NAME, car->direction);
     int fd;
     //do {
 
         fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
-        if(fd == -1)
-            sleep(1);
+        /*if(fd == -1)
+            sleep(1);*/
   //  } while(fd == -1);
 
     sem_t *sem;
@@ -58,10 +60,35 @@ void *carThread(void *arg)
       exit(4);
     }
 
-
+    // passes the car information to the park
     write(fd, car, sizeof(struct carInfo));
+
+    // open and write gerador.log
+    char line[128];
+    FILE *gerador = fopen("gerador.log", "a");
+    time_t ticks = clock();
+//    sprintf(line, );
+    fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?\n", (int)ticks, car->number, car->direction, car->parkingTime);
+
+
+    // opens its own FIFO
+    mkfifo(car->fifoName, 0660);
+    int carFifo = open(car->fifoName, O_RDONLY | O_NONBLOCK);
+    int n = 0;
+    char input[10];
+
+    /*while(n == 0)
+        n = read(carFifo, input, sizeof(input) * sizeof(char));*/
+
+
+    sprintf(line, "%-10d;%-10d;%-10c;%-10d;%-10d\n", 5, car->number, car->direction, car->parkingTime, 10);
+    printf("%s", line);
+
     sem_post(sem);
     sem_close(sem);
+    close(carFifo);
+    unlink(car->fifoName);
+    fclose(gerador);
     return NULL;
 }
 
@@ -87,6 +114,10 @@ int main(int argc, char* argv[])
         printf("Illegal arguments. Use <unsigned int> <unsigned int>\n");
         exit(2);
     }
+
+    // clears gerador.log
+    FILE *gerador = fopen("gerador.log", "w");
+    fclose(gerador);
 
     time_t t;
     srand((unsigned) time(&t));
@@ -122,14 +153,19 @@ int main(int argc, char* argv[])
             //++carNumbers[index];
             ++carNumber;
             int parkTime = ((rand() % 10) + 1) * minInterval;
+            char carFifoName[15];
+            sprintf(carFifoName, "fifo%c%d", direction, carNumber);
+
             sleepTime = probabilities[rand() % 10] * minInterval;
             //printf("car: %s%d - time: %d\n", direction, carNumber, parkTime);
             begin = end;
+
 
             pthread_t newThread;
             carInfos[carNumber].direction = direction;
             carInfos[carNumber].number = carNumber;
             carInfos[carNumber].parkingTime = parkTime;
+            strcpy(carInfos[carNumber].fifoName, carFifoName);
 
             pthread_create(&newThread, NULL, carThread, (void *)&carInfos[carNumber]);
         }
