@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <string.h>
+#include <semaphore.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -14,6 +15,8 @@
 
 unsigned int durationPeriod;
 unsigned int minInterval;
+
+char SEM_NAME[] = "/sem";
 
 struct carInfo
 {
@@ -32,21 +35,33 @@ void *carThread(void *arg)
         printf("Error making thread nr %d detached\n", (int)ownThread);
         exit(1);
     }
+
     struct carInfo *car = (struct carInfo*) arg;
     printf("thr: car: %c%d - time: %d\n", car->direction, car->number, car->parkingTime);
 
     // open the correct FIFO
-    char fifoName[6];
+    char fifoName[6], semName[6];
     sprintf(fifoName, "fifo%c", car->direction);
+    sprintf(semName, "%s%c", SEM_NAME, car->direction);
     int fd;
-    do
-    {
-        fd = open(fifoName, O_WRONLY);
+    //do {
+
+        fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
         if(fd == -1)
             sleep(1);
-    } while(fd == -1);
+  //  } while(fd == -1);
+
+    sem_t *sem;
+    sem = sem_open(semName,0,0600,0);
+    if(sem == SEM_FAILED){
+      printf("Error opening semaphore\n");
+      exit(4);
+    }
+
 
     write(fd, car, sizeof(struct carInfo));
+    sem_post(sem);
+    sem_close(sem);
     return NULL;
 }
 
@@ -61,7 +76,7 @@ int main(int argc, char* argv[])
     if(argc != 3)
     {
         printf("Usage: %s <T_GERACAO> <U_RELOGIO>\n", argv[0]);
-        exit(2);
+        exit(1);
     }
 
     durationPeriod = strtol(argv[1], NULL, 10);
@@ -70,7 +85,7 @@ int main(int argc, char* argv[])
     if(durationPeriod <= 0 || minInterval <= 0)
     {
         printf("Illegal arguments. Use <unsigned int> <unsigned int>\n");
-        exit(3);
+        exit(2);
     }
 
     time_t t;
@@ -84,12 +99,12 @@ int main(int argc, char* argv[])
     if (sigaction(SIGALRM,&action, NULL) < 0)
     {
         fprintf(stderr,"Unable to install SIGALRM handler\n");
-        exit(4);
+        exit(3);
     }
     alarm(durationPeriod);
 
     time_t begin, end;
-    char *fifoNames[NUM_ENTRANCES] = {"N", "S", "E", "W"};
+    char fifoNames[NUM_ENTRANCES] = {'N', 'S', 'E', 'W'};
     int probabilities[10] = {0,0,0,0,0,1,1,1,2,2};
     //    int carNumbers[4] = {0, 0, 0, 0};
     int carNumber = 0;
@@ -103,7 +118,7 @@ int main(int argc, char* argv[])
         if(end - begin >= sleepTime)
         {
             index = rand() % 4;
-            char *direction = fifoNames[index];
+            char direction = fifoNames[index];
             //++carNumbers[index];
             ++carNumber;
             int parkTime = ((rand() % 10) + 1) * minInterval;
@@ -112,7 +127,7 @@ int main(int argc, char* argv[])
             begin = end;
 
             pthread_t newThread;
-            carInfos[carNumber].direction = *direction;
+            carInfos[carNumber].direction = direction;
             carInfos[carNumber].number = carNumber;
             carInfos[carNumber].parkingTime = parkTime;
 
@@ -120,5 +135,5 @@ int main(int argc, char* argv[])
         }
     }
 
-
+    return 0;
 }

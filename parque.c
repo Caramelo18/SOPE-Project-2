@@ -1,16 +1,23 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
 #include <string.h>
+#include <semaphore.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 
+char SEM_NAME[] = "/sem";
 
 unsigned int parkingSpaces;
 unsigned int maxSpaces;
+unsigned int closingTime = 0;
+sem_t *semaphores[4];
+int semIndex = 0;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #define NUM_ENTRANCES   4
 
@@ -23,26 +30,62 @@ struct carInfo
 
 void alarm_handler(int signo)
 {
-    printf("Time's up\n");
-    exit(0);
+    closingTime = 1;
+    int i=0;
+    for(;i<NUM_ENTRANCES; i++){
+      sem_post(semaphores[i]);
+    }
 }
+
+void *janitor(void *arg){
+  return NULL;
+}
+
 
 void *entrancePoints(void *arg)
 {
-    char fifoName[6];
-    sprintf(fifoName, "fifo%s", (char *)arg);
-    printf("Controller: %s\n", fifoName);
-    int fd;
+    char fifoName[8], semName[6] ;
+    sprintf(fifoName, "fifo%c", *(char *)arg);
+    sprintf(semName, "%s%c", SEM_NAME, *(char *)arg);
+    printf("Controller: %s   %s\n", fifoName, semName);
+    int fifofd;
+
     mkfifo(fifoName, 0660);
-    fd = open(fifoName, O_RDONLY);
+    fifofd = open(fifoName, O_RDONLY | O_NONBLOCK);
     struct carInfo car;
+
+    pthread_mutex_lock(&mutex);
+    int a = semIndex++;
+    pthread_mutex_unlock(&mutex);
+    semaphores[a] = sem_open(semName,O_CREAT,0600,0);
+    if(semaphores[a] == SEM_FAILED){
+      printf("Error opening semaphore\n");
+      exit(4);
+    }
+
+
     int n;
-    do
-    {
-        n = read(fd, &car, sizeof(struct carInfo));
+    do {
+      sem_wait(semaphores[a]);
+
+      n = read(fifofd, &car, sizeof(struct carInfo));
+      //printf("%d\n", n);
+
+
+      if(n == 0) {
+
+
+
+      }
+      else{
+
         printf("car: %c%d - time: %d\n", car.direction, car.number, car.parkingTime);
-    } while(n > 0);
-    close(fd);
+      }
+
+
+    } while (closingTime != 1);
+    close(fifofd);
+    sem_close(semaphores[a]);
     unlink(fifoName);
     return NULL;
 }
@@ -73,19 +116,16 @@ int main(int argc, char* argv[]){
         fprintf(stderr,"Unable to install SIGALRM handler\n");
         exit(3);
     }
+
     alarm(workingTime);
-    //alarm(1);
-
-    //while(1) ;
-
-
     pthread_t threads[NUM_ENTRANCES];
-    char *fifoNames[NUM_ENTRANCES]= {"N", "S", "E", "W"};
-    int i;
-    for (i = 0; i < NUM_ENTRANCES; i++) {
-        pthread_create(&threads[i], NULL, entrancePoints, fifoNames[i]);
+    char fifoNames[NUM_ENTRANCES]= {'N', 'S', 'E', 'W'};
 
-    }
-    pthread_exit(0);
+    int i;
+    for (i = 0; i < NUM_ENTRANCES; i++)
+        pthread_create(&threads[i], NULL, entrancePoints, &fifoNames[i]);
+
+    for (i = 0; i < NUM_ENTRANCES; i++)
+      pthread_join(threads[i], NULL);
     return 0;
 }
