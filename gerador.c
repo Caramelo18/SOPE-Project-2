@@ -22,7 +22,7 @@ struct carInfo
 {
     char direction;
     int number;
-    int parkingTime;
+    clock_t parkingTime;
     char fifoName[15];
 };
 
@@ -46,12 +46,7 @@ void *carThread(void *arg)
     // open the correct FIFO
     sprintf(fifoName, "fifo%c", car->direction);
     int fd;
-    //do {
-
-        fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
-        /*if(fd == -1)
-            sleep(1);*/
-  //  } while(fd == -1);
+    fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
 
     sem_t *sem;
     sem = sem_open(semName,0,0600,0);
@@ -68,20 +63,20 @@ void *carThread(void *arg)
     FILE *gerador = fopen("gerador.log", "a");
     time_t ticks = clock();
 //    sprintf(line, );
-    fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?\n", (int)ticks, car->number, car->direction, car->parkingTime);
+    fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
 
 
     // opens its own FIFO
     mkfifo(car->fifoName, 0660);
     int carFifo = open(car->fifoName, O_RDONLY | O_NONBLOCK);
-    int n = 0;
-    char input[10];
+    //int n = 0;
+    //char input[10];
 
     /*while(n == 0)
         n = read(carFifo, input, sizeof(input) * sizeof(char));*/
 
 
-    sprintf(line, "%-10d;%-10d;%-10c;%-10d;%-10d\n", 5, car->number, car->direction, car->parkingTime, 10);
+    sprintf(line, "%-10d;%-10d;%-10c;%-10d;%-10d\n", 5, car->number, car->direction, (int)car->parkingTime, 10);
     printf("%s", line);
 
     sem_post(sem);
