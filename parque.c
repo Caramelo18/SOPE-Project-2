@@ -95,7 +95,7 @@ void *janitor(void *arg){
   printf("out: %d - left:%d\n", car.number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
 
-  // write(fifofd, OUT, sizeof(OUT));
+   write(fifofd, OUT, sizeof(OUT));
   close(fifofd);
   unlink(car.fifoName);
 
@@ -119,6 +119,7 @@ void *entrancePoints(void *arg)
 
   mkfifo(fifoName, 0660);
   fifofd = open(fifoName, O_RDONLY | O_NONBLOCK);
+  printf("%d\n", fifofd);
 
   pthread_mutex_lock(&mutexEntrance);
   int a = semIndex++;
@@ -136,8 +137,9 @@ void *entrancePoints(void *arg)
     //printf("%d\n", parkingSpaces);
 
     n = read(fifofd, &car, sizeof(struct carInfo));
-    if(n > 0){}
+    if(n > 0){
       //printf("%s  car: %c%d - time: %d\n", semName, car.direction, car.number, (int)car.parkingTime);
+    }
     if(n == 0 && closingTime == 0){
       continue;
     }
@@ -159,8 +161,8 @@ void *entrancePoints(void *arg)
     }
 
 
-    //pthread_t janitorThread;
-    //pthread_create(&janitorThread, NULL, janitor, &car);
+    pthread_t janitorThread;
+    pthread_create(&janitorThread, NULL, janitor, &car);
   }
 
 }

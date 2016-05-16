@@ -19,6 +19,7 @@
 #define IN              "IN"
 
 const char SEM_NAME[] = "/sem";
+const char fifoNames[NUM_ENTRANCES] = {'N', 'S', 'E', 'W'};
 
 struct carInfo
 {
@@ -32,7 +33,7 @@ short closingTime = 0;
 unsigned int durationPeriod;
 unsigned int minInterval;
 sem_t *entrances[NUM_ENTRANCES];
-const char fifoNames[NUM_ENTRANCES] = {'N', 'S', 'E', 'W'};
+
 
 struct carInfo carInfos[MAXTHREADS];
 
@@ -55,15 +56,22 @@ void *carThread(void *arg)
     // open the correct FIFO
     sprintf(fifoName, "fifo%c", car.direction);
     int fd;
-    fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
 
+
+    fd = open(fifoName, O_WRONLY | O_NONBLOCK);  //see O_NONBLOCK
+    if(fd == -1){
+      printf("Main fifos error %s %d  %d  %d\n", fifoName ,errno, ENOSPC , ENXIO  );
+      return NULL;
+    }
 
     // passes the car information to the park
 
     if(write(fd, &car, sizeof(struct carInfo)) == -1){
-      //printf("write error  %d  %d\n", errno, EBADF);
+      printf("write error  %d  %d\n", errno, EBADF);
+      close(fd);
       return NULL;
     }
+    close(fd);
 
 
     // open and write gerador.log
@@ -91,7 +99,6 @@ void *carThread(void *arg)
       ind = 2;
     else if(car.direction == 'W')
       ind = 3;
-      printf("%c%d\n", car.direction, ind);
     sem_post(entrances[ind]);
     //sem_close(sem);
     //}
@@ -99,7 +106,9 @@ void *carThread(void *arg)
     mkfifo(car.fifoName, 0660);
     int carFifo;
   //  do {
-        carFifo = open(car.fifoName, O_RDONLY);
+    carFifo = open(car.fifoName, O_RDONLY);
+    if(carFifo == -1)
+      printf("Open error %d %d\n", errno, ENOMEM);
   //  } while(carFifo == -1);
 
     int in = 0;
@@ -196,7 +205,8 @@ int main(int argc, char* argv[])
     for (;i < NUM_ENTRANCES;i++) {
       char name[7];
       sprintf(name, "%s%c", SEM_NAME,fifoNames[i]);
-      entrances[i] = sem_open(name, 0660, 0);
+      printf("%s\n", name);
+      entrances[i] = sem_open(name,0, 0600, 0);
     }
 
     begin = clock();
