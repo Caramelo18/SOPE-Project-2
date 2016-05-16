@@ -72,16 +72,17 @@ void *janitor(void *arg){
   //} while(fifofd == -1);
   pthread_mutex_lock(&mutexParking);
   if(parkingSpaces == 0){
-    write(fifofd, FULL, sizeof(FULL));
     printf("full: %d - left:%d\n", car.number, parkingSpaces);
     pthread_mutex_unlock(&mutexParking);
+    write(fifofd, FULL, sizeof(FULL));
     updateLog();
+    close(fifofd);
     return NULL;
   }
   parkingSpaces--;
-  write(fifofd, IN, sizeof(IN));
   printf("in: %d - left:%d\n", car.number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
+  write(fifofd, IN, sizeof(IN));
   updateLog();
 
   clock_t start, end;
@@ -94,8 +95,7 @@ void *janitor(void *arg){
   parkingSpaces++;
   printf("out: %d - left:%d\n", car.number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
-
-   write(fifofd, OUT, sizeof(OUT));
+  write(fifofd, OUT, sizeof(OUT));
   close(fifofd);
   unlink(car.fifoName);
 

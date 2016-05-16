@@ -60,6 +60,8 @@ void *carThread(void *arg)
 
     fd = open(fifoName, O_WRONLY | O_NONBLOCK);  //see O_NONBLOCK
     if(fd == -1){
+      if(errno == 2)
+        return NULL;
       printf("Main fifos error %s %d  %d  %d\n", fifoName ,errno, ENOSPC , ENXIO  );
       return NULL;
     }
@@ -120,14 +122,14 @@ void *carThread(void *arg)
         if(strcmp(input, OUT) == 0) // if car exits the park
         {
             time_t ticks = clock();
-            //printf("car %d out\n", car.number);
+            printf("car %d out\n", car.number);
             fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; out\n", (int)ticks, car.number, car.direction, (int)car.parkingTime);
             break;
         }
         else if(strcmp(input, IN) == 0 && in == 0)
         {
             time_t ticks = clock();
-            //printf("car %d in\n", car.number);
+            printf("car %d in\n", car.number);
             fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; in\n", (int)ticks, car.number, car.direction, (int)car.parkingTime);
             in = 1;
         }
@@ -215,13 +217,14 @@ int main(int argc, char* argv[])
         end = clock();
         if(end - begin >= sleepTime)
         {
+            struct carInfo car;
             index = rand() % 4;
-            char direction = fifoNames[index];
+            car.direction = fifoNames[index];
             //++carNumbers[index];
             //++carNumber;
-            int parkTime = ((rand() % 10) + 1) * minInterval;
-            char carFifoName[15];
-            sprintf(carFifoName, "fifo%c%d", direction, carNumber);
+            car.parkingTime = ((rand() % 10) + 1) * minInterval;
+            //char carFifoName[15];
+            sprintf(car.fifoName, "fifo%c%d", car.direction, carNumber);
 
             sleepTime = probabilities[rand() % 10] * minInterval;
             //printf("car: %c%d - time: %d\n", direction, carNumber, parkTime);
@@ -229,7 +232,7 @@ int main(int argc, char* argv[])
 
 
             pthread_t newThread;
-            struct carInfo car;
+
 
             /*carInfos[carNumber].direction = direction;
             carInfos[carNumber].number = carNumber;
@@ -238,10 +241,10 @@ int main(int argc, char* argv[])
             carIndex++;
             if(carIndex >= MAXTHREADS)
               carIndex = 0;
-            car.direction = direction;
+            //car.direction = direction;
             car.number = ++carNumber;
-            car.parkingTime = parkTime;
-            strcpy(car.fifoName, carFifoName);
+            //car.parkingTime = parkTime;
+            //strcpy(car.fifoName, carFifoName);
             carInfos[carIndex] = car;
             //printf("%c%-10d - %-10d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime,car.fifoName);
             pthread_create(&newThread, NULL, carThread, (void *)&carInfos[carIndex]);
