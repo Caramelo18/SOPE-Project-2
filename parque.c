@@ -15,24 +15,12 @@
 #define FULL            "FULL"
 #define OUT             "OUT"
 #define IN              "IN"
+#define LOG             "parque.log"
 
 
 
-char SEM_NAME[] = "/sem";
-const char PRIVATE_FIFO[] = "./temp/fifo";
-char FIFO_BACKUP[FIFO_SIZE];
-int maxSpaces;
-
-unsigned int parkingSpaces;
-unsigned int closingTime = 0;
-sem_t *semaphores[4];
-int semIndex = 0;
-
-pthread_mutex_t mutexParking = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutexEntrance = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t condEmpty = PTHREAD_COND_INITIALIZER;
-
-
+const char SEM_NAME[] = "/sem";
+//const char PRIVATE_FIFO[] = "./temp/fifo";
 
 struct carInfo
 {
@@ -41,6 +29,24 @@ struct carInfo
   clock_t parkingTime;
   char fifoName[15];
 };
+
+//char FIFO_BACKUP[FIFO_SIZE];
+int maxSpaces;
+
+unsigned int parkingSpaces;
+unsigned int closingTime = 0;
+sem_t *semaphores[4];
+int semIndex = 0;
+struct carInfo *vehicle;
+
+pthread_mutex_t mutexParking = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutexEntrance = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutexLog = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t condEmpty = PTHREAD_COND_INITIALIZER;
+
+
+
+
 
 void alarm_handler(int signo)
 {
@@ -51,9 +57,18 @@ void alarm_handler(int signo)
   }
 }
 
-void updateLog(){
+void updateLog(int id, char message[]){
+  pthread_mutex_lock(&mutexLog);
+  FILE *file;
+  clock_t c = clock();
+  file = fopen(LOG, "a");
+  fprintf(file,"%7d ; %5d ; %5d  ; %s\n", (int)c, parkingSpaces, id, message);
+  fclose(file);
 
+
+  pthread_mutex_unlock(&mutexLog);
 }
+
 
 void *janitor(void *arg){
   pthread_t ownThread = pthread_self();
@@ -63,55 +78,57 @@ void *janitor(void *arg){
     exit(1);
   }
 
-  struct carInfo car = *(struct carInfo*) arg;
+  struct carInfo *car = arg;
+
   int fifofd;
-  // printf("%s\n", car.fifoName);
+  //printf("%s\n", car->fifoName);
 
   //do {
-    fifofd = open(car.fifoName, O_WRONLY);
+    fifofd = open(car->fifoName, O_WRONLY);
   //} while(fifofd == -1);
   pthread_mutex_lock(&mutexParking);
   if(parkingSpaces == 0){
-    printf("full: %d - left:%d\n", car.number, parkingSpaces);
+    printf("full: %d - left:%d\n", car->number, parkingSpaces);
     pthread_mutex_unlock(&mutexParking);
     write(fifofd, FULL, sizeof(FULL));
-    updateLog();
+    updateLog(car->number, FULL);
     close(fifofd);
+    free(car);
     return NULL;
   }
   parkingSpaces--;
-  printf("in: %d - left:%d\n", car.number, parkingSpaces);
+  printf("in: %d - left:%d\n", car->number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
   write(fifofd, IN, sizeof(IN));
-  updateLog();
+  updateLog(car->number, IN);
 
   clock_t start, end;
   start = clock();
   do{
     end = clock();
-  }while(end-start >= car.parkingTime);
+  }while(end-start >= car->parkingTime);
 
   pthread_mutex_lock(&mutexParking);
   parkingSpaces++;
-  printf("out: %d - left:%d\n", car.number, parkingSpaces);
+  printf("out: %d - left:%d\n", car->number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
   write(fifofd, OUT, sizeof(OUT));
   close(fifofd);
-  unlink(car.fifoName);
+  unlink(car->fifoName);
 
   if(closingTime == 1 && parkingSpaces == maxSpaces){
     pthread_cond_broadcast(&condEmpty);
   }
-  updateLog();
+  updateLog(car->number, OUT);
 
-
+  free(car);
   return NULL;
 }
 
 
 void *entrancePoints(void *arg)
 {
-  char fifoName[15], semName[15] ;
+  char fifoName[8], semName[8] ;
   sprintf(fifoName, "fifo%c", *(char *)arg);
   sprintf(semName, "%s%c", SEM_NAME, *(char *)arg);
   printf("Controller: %s   %s\n", fifoName, semName);
@@ -119,7 +136,7 @@ void *entrancePoints(void *arg)
 
   mkfifo(fifoName, 0660);
   fifofd = open(fifoName, O_RDONLY | O_NONBLOCK);
-  printf("%d\n", fifofd);
+  //printf("%d\n", fifofd);
 
   pthread_mutex_lock(&mutexEntrance);
   int a = semIndex++;
@@ -130,17 +147,20 @@ void *entrancePoints(void *arg)
     printf("Error opening semaphore\n");
     exit(4);
   }
-  struct carInfo car;
+  //struct carInfo car;
   int n;
+  int i;
   while (1){
-    sem_wait(semaphores[a]);
+    i = sem_wait(semaphores[a]);
+    //printf("%d\n", i);
     //printf("%d\n", parkingSpaces);
 
-    n = read(fifofd, &car, sizeof(struct carInfo));
+    vehicle = malloc(sizeof(struct carInfo));
+    n = read(fifofd, vehicle, sizeof(struct carInfo));
     if(n > 0){
-      //printf("%s  car: %c%d - time: %d\n", semName, car.direction, car.number, (int)car.parkingTime);
+      //printf("%s  car: %c%d - time: %d\n", semName, vehicle->direction, vehicle->number, (int)vehicle->parkingTime);
     }
-    if(n == 0 && closingTime == 0){
+    if(n <= 0 && closingTime == 0){
       continue;
     }
     if(closingTime == 1){
@@ -153,6 +173,7 @@ void *entrancePoints(void *arg)
       sem_close(semaphores[a]);
 
       unlink(fifoName);
+      free(vehicle);
       pthread_mutex_lock(&mutexParking);
       while(parkingSpaces != maxSpaces)
         pthread_cond_wait(&condEmpty, &mutexParking);
@@ -162,7 +183,7 @@ void *entrancePoints(void *arg)
 
 
     pthread_t janitorThread;
-    pthread_create(&janitorThread, NULL, janitor, &car);
+    pthread_create(&janitorThread, NULL, janitor, vehicle);
   }
 
 }
@@ -200,10 +221,10 @@ int main(int argc, char* argv[]){
 
   int i;
   for (i = 0; i < NUM_ENTRANCES; i++)
-  pthread_create(&threads[i], NULL, entrancePoints, &fifoNames[i]);
+    pthread_create(&threads[i], NULL, entrancePoints, &fifoNames[i]);
 
   for (i = 0; i < NUM_ENTRANCES; i++)
-  pthread_join(threads[i], NULL);
+    pthread_join(threads[i], NULL);
   printf("%d\n", parkingSpaces);
   return 0;
 }

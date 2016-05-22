@@ -33,6 +33,7 @@ short closingTime = 0;
 unsigned int durationPeriod;
 unsigned int minInterval;
 sem_t *entrances[NUM_ENTRANCES];
+struct carInfo * vehicle;
 
 
 struct carInfo carInfos[MAXTHREADS];
@@ -46,33 +47,41 @@ void *carThread(void *arg)
         exit(1);
     }
 
-    struct carInfo car = *(struct carInfo *) arg;
+    struct carInfo *car = (struct carInfo *) arg;
 
     //printf("thr: car: %cA%d - time: %d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime, car.fifoName);
 
     char fifoName[15], semName[15];
-    sprintf(semName, "%s%c", SEM_NAME, car.direction);
+    sprintf(semName, "%s%c", SEM_NAME, car->direction);
 
     // open the correct FIFO
-    sprintf(fifoName, "fifo%c", car.direction);
+    sprintf(fifoName, "fifo%c", car->direction);
     int fd;
-
+    //printf("%s\n", fifoName);
 
     fd = open(fifoName, O_WRONLY | O_NONBLOCK);  //see O_NONBLOCK
     if(fd == -1){
-      if(errno == 2)
+      if(errno == ENOENT){
+        printf("Pipe isn't created yet\n");
         return NULL;
-      printf("Main fifos error %s %d  %d  %d\n", fifoName ,errno, ENOSPC , ENXIO  );
-      return NULL;
-    }
-
-    // passes the car information to the park
-
-    if(write(fd, &car, sizeof(struct carInfo)) == -1){
-      printf("write error  %d  %d\n", errno, EBADF);
+      }
+      printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
       close(fd);
       return NULL;
     }
+
+    //printf("%c%-10d - %-10d - own fifo: %s\n", car->direction, car->number, (int)car->parkingTime,car->fifoName);
+    if(mkfifo(car->fifoName, 0660) == -1)
+      printf("Make fifo error %s     %d   %d \n", car->fifoName, errno, EEXIST);
+
+    // passes the car information to the park
+
+    if(write(fd, car, sizeof(struct carInfo)) == -1){
+      printf("write error car%d  %d  %d\n", car->number, errno, EBADF);
+      close(fd);
+      return NULL;
+    }
+
     close(fd);
 
 
@@ -93,24 +102,23 @@ void *carThread(void *arg)
     }*/
     //else{
     int ind = 'A';
-    if(car.direction == 'N')
+    if(car->direction == 'N')
       ind = 0;
-    else if(car.direction == 'S')
+    else if(car->direction == 'S')
       ind = 1;
-    else if(car.direction == 'E')
+    else if(car->direction == 'E')
       ind = 2;
-    else if(car.direction == 'W')
+    else if(car->direction == 'W')
       ind = 3;
     sem_post(entrances[ind]);
     //sem_close(sem);
     //}
     // opens its own FIFO
-    mkfifo(car.fifoName, 0660);
     int carFifo;
   //  do {
-    carFifo = open(car.fifoName, O_RDONLY);
+    carFifo = open(car->fifoName, O_RDONLY);
     if(carFifo == -1)
-      printf("Open error %d %d\n", errno, ENOMEM);
+      printf("Open error %d %d\n", errno, EMFILE);
   //  } while(carFifo == -1);
 
     int in = 0;
@@ -118,34 +126,35 @@ void *carThread(void *arg)
 
     while(1)
     {
-        read(carFifo, input, sizeof(input) * sizeof(char));
+        read(carFifo, input, sizeof(input));
         if(strcmp(input, OUT) == 0) // if car exits the park
         {
             time_t ticks = clock();
-            printf("car %d out\n", car.number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; out\n", (int)ticks, car.number, car.direction, (int)car.parkingTime);
+            printf("car %d out\n", car->number);
+            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; out\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             break;
         }
         else if(strcmp(input, IN) == 0 && in == 0)
         {
             time_t ticks = clock();
-            printf("car %d in\n", car.number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; in\n", (int)ticks, car.number, car.direction, (int)car.parkingTime);
+            printf("car %d in\n", car->number);
+            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; in\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             in = 1;
         }
         else if(strcmp(input, FULL) == 0)
         {
             time_t ticks = clock();
-            printf("car %d full\n", car.number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; full\n", (int)ticks, car.number, car.direction, (int)car.parkingTime);
+            printf("car %d full\n", car->number);
+            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; full\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             break;
         }
     }
 
 
     close(carFifo);
-    unlink(car.fifoName);
+    unlink(car->fifoName);
     fclose(gerador);
+    free(car);
     return NULL;
 }
 
@@ -198,7 +207,7 @@ int main(int argc, char* argv[])
 
     int probabilities[10] = {0,0,0,0,0,1,1,1,2,2};
     //    int carNumbers[4] = {0, 0, 0, 0};
-    int carNumber = 0, carIndex = 0;
+    int carNumber = 0; //carIndex = 0;
     int index;
     int sleepTime = probabilities[rand() % 10] * minInterval;
 
@@ -207,7 +216,7 @@ int main(int argc, char* argv[])
     for (;i < NUM_ENTRANCES;i++) {
       char name[7];
       sprintf(name, "%s%c", SEM_NAME,fifoNames[i]);
-      printf("%s\n", name);
+      //printf("%s\n", name);
       entrances[i] = sem_open(name,0, 0600, 0);
     }
 
@@ -215,21 +224,23 @@ int main(int argc, char* argv[])
     while(closingTime != 1)
     {
         end = clock();
-        if(end - begin >= sleepTime)
+        if((int)(end - begin) >= (int)sleepTime)
         {
-            struct carInfo car;
+          printf("%d    %d\n", (int)(end-begin), sleepTime);
+            vehicle = malloc(sizeof(struct carInfo));
             index = rand() % 4;
-            car.direction = fifoNames[index];
-            //++carNumbers[index];
+            vehicle->direction = fifoNames[index];
+            //printf("%c\n", vehicle->direction);
             //++carNumber;
-            car.parkingTime = ((rand() % 10) + 1) * minInterval;
+            vehicle->parkingTime = ((rand() % 10) + 1) * minInterval;
+            printf("%lu\n", (unsigned long)vehicle->parkingTime/CLOCKS_PER_SEC);
             //char carFifoName[15];
-            sprintf(car.fifoName, "fifo%c%d", car.direction, carNumber);
+            sprintf(vehicle->fifoName, "fifo%c%d", vehicle->direction, carNumber);
 
             sleepTime = probabilities[rand() % 10] * minInterval;
             //printf("car: %c%d - time: %d\n", direction, carNumber, parkTime);
-            begin = end;
 
+          //printf("next %d    duration %d   elapsed %lu\n", sleepTime, (int)vehicle->parkingTime, (long) (end-begin));
 
             pthread_t newThread;
 
@@ -237,19 +248,20 @@ int main(int argc, char* argv[])
             /*carInfos[carNumber].direction = direction;
             carInfos[carNumber].number = carNumber;
             carInfos[carNumber].parkingTime = parkTime;
-            strcpy(carInfos[carNumber].fifoName, carFifoName);*/
+            strcpy(carInfos[carNumber].fifoName, carFifoName);
             carIndex++;
+            ++carNumber;
             if(carIndex >= MAXTHREADS)
-              carIndex = 0;
-            //car.direction = direction;
-            car.number = ++carNumber;
-            //car.parkingTime = parkTime;
-            //strcpy(car.fifoName, carFifoName);
-            carInfos[carIndex] = car;
-            //printf("%c%-10d - %-10d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime,car.fifoName);
-            pthread_create(&newThread, NULL, carThread, (void *)&carInfos[carIndex]);
+              carIndex = 0;*/
+            //car->direction = direction;
+            vehicle->number = ++carNumber;
+            //car->parkingTime = parkTime;
+            //strcpy(car->fifoName, carFifoName);
+            //carInfos[carIndex] =*car;
+            //printf("%c%-10d - %-10d - own fifo: %s\n", car->direction, car->number, (int)car->parkingTime,car->fifoName);
+            pthread_create(&newThread, NULL, carThread, (void *)vehicle);
             //pthread_create(&newThread, NULL, carThread, (void *)&car);
-
+            begin = end;
         }
     }
 
