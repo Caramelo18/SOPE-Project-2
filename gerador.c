@@ -67,6 +67,7 @@ void *carThread(void *arg)
       }
       printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
       close(fd);
+      free(car);
       return NULL;
     }
 
@@ -79,6 +80,7 @@ void *carThread(void *arg)
     if(write(fd, car, sizeof(struct carInfo)) == -1){
       printf("write error car%d  %d  %d\n", car->number, errno, EBADF);
       close(fd);
+      free(car);
       return NULL;
     }
 
