@@ -1,43 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <signal.h>
-#include <string.h>
-#include <semaphore.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/file.h>
+#include "utilities.h"
 
-#define NAMESIZE 10
-#define NUM_ENTRANCES   4
-
-#define FULL            "FULL"
-#define OUT             "OUT"
-#define IN              "IN"
 #define LOG             "gerador.log"
 
-const char SEM_NAME[] = "/sem";
-const char fifoNames[NUM_ENTRANCES] = {'N', 'S', 'E', 'W'};
-
-struct carInfo
-{
-    char direction;
-    int number;
-    clock_t parkingTime;
-    char fifoName[15];
-};
-
 short closingTime = 0;
-//unsigned int durationPeriod;
 unsigned int minInterval;
-sem_t *entrances[NUM_ENTRANCES];
+//sem_t *entrances[NUM_ENTRANCES];
 
 void updateLog(struct carInfo *car, char message[], clock_t ticks, int start)
 {
-     FILE *file;
-     file = fopen(LOG, "a");
+     FILE *file = fopen(LOG, "a");
      clock_t current = clock();
      if(start == 1)
         fprintf(file, "%9d;%9d;%8c;%12d;    ?    ; %5s\n", (int)ticks, car->number, car->direction, (int)car->parkingTime, message);
@@ -57,13 +28,16 @@ void *carThread(void *arg)
     }
 
     struct carInfo *car = (struct carInfo *) arg;
-
-
     //printf("thr: car: %cA%d - time: %d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime, car.fifoName);
 
     char fifoName[15], semName[15];
     sprintf(semName, "%s%c", SEM_NAME, car->direction);
 
+    sem_t * sem = sem_open(semName,0, 0600, 0);
+    if(sem == SEM_FAILED){
+        if(errno == ENOENT)
+          return NULL;
+    }
     // open the correct FIFO
     sprintf(fifoName, "fifo%c", car->direction);
     int fd;
@@ -76,14 +50,14 @@ void *carThread(void *arg)
             return NULL;
         }
         /*else if(errno == EINTR){
-        printf("generator timeout\n");
+            printf("generator timeout\n");
+            free(car);
+            return NULL;
+        }*/
+        printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
+        //close(fd);
         free(car);
         return NULL;
-    }*/
-    printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
-    //close(fd);
-    free(car);
-    return NULL;
     }
 
     //printf("%c%-10d - %-10d - own fifo: %s\n", car->direction, car->number, (int)car->parkingTime,car->fifoName);
@@ -106,17 +80,17 @@ void *carThread(void *arg)
     // open and write gerador.log
     FILE *gerador = fopen(LOG, "a");
 
-    int ind = 0;
-    if(car->direction == 'N')
-        ind = 0;
-    else if(car->direction == 'S')
-        ind = 1;
-    else if(car->direction == 'E')
-        ind = 2;
-    else if(car->direction == 'W')
-        ind = 3;
-    sem_post(entrances[ind]);
-    //sem_close(sem);
+    // int ind = 0;
+    // if(car->direction == 'N')
+    //     ind = 0;
+    // else if(car->direction == 'S')
+    //     ind = 1;
+    // else if(car->direction == 'E')
+    //     ind = 2;
+    // else if(car->direction == 'W')
+    //     ind = 3;
+    sem_post(sem);
+    sem_close(sem);
     //}
     // opens its own FIFO
     int carFifo;
@@ -138,7 +112,7 @@ void *carThread(void *arg)
         if(strcmp(input, OUT) == 0) // if car exits the park
         {
             endTime = clock();
-            printf("start: %d - end: %d - diff:%d\n", createTime, endTime, endTime - createTime);
+            printf("start: %d - end: %d - diff:%d\n", (int)createTime, (int)endTime, (int)(endTime - createTime));
             updateLog(car, OUT, endTime - createTime, 0);
             break;
         }
@@ -207,24 +181,12 @@ int main(int argc, char* argv[])
     }
     alarm(durationPeriod);
 
-
-
     time_t begin, end;
 
     int probabilities[10] = {0,0,0,0,0,1,1,1,2,2};
-    //    int carNumbers[4] = {0, 0, 0, 0};
-    int carNumber = 0; //carIndex = 0;
+    int carNumber = 0;
     int index;
     int sleepTime = probabilities[rand() % 10] * minInterval;
-
-    int i = 0;
-
-    for (;i < NUM_ENTRANCES;i++) {
-        char name[7];
-        sprintf(name, "%s%c", SEM_NAME,fifoNames[i]);
-        //printf("%s\n", name);
-        entrances[i] = sem_open(name,0, 0600, 0);
-    }
 
     begin = clock();
     while(closingTime != 1)
@@ -241,18 +203,11 @@ int main(int argc, char* argv[])
             sprintf(vehicle->fifoName, "fifo%c%d", vehicle->direction, carNumber);
             sleepTime = probabilities[rand() % 10] * minInterval;
             //printf("car: %c%d - time: %d\n", direction, carNumber, parkTime);
-
             //printf("next %d    duration %d   elapsed %lu\n", sleepTime, (int)vehicle->parkingTime, (long) (end-begin));
-
             pthread_t newThread;
-
             pthread_create(&newThread, NULL, carThread, (void *)vehicle);
             begin = end;
         }
-    }
-
-    for(i=0; i< NUM_ENTRANCES; i++){
-        sem_close(entrances[i]);
     }
 
     pthread_exit(0);
