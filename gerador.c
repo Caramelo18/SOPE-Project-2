@@ -78,7 +78,7 @@ void *carThread(void *arg)
 
 
     // open and write gerador.log
-    FILE *gerador = fopen(LOG, "a");
+    //FILE *gerador = fopen(LOG, "a");
 
     // int ind = 0;
     // if(car->direction == 'N')
@@ -89,8 +89,17 @@ void *carThread(void *arg)
     //     ind = 2;
     // else if(car->direction == 'W')
     //     ind = 3;
+    // if(sem_post(sem) == -1){
+    //     if(errno == ENOENT)
+    //       return NULL;
+    // }
     sem_post(sem);
-    sem_close(sem);
+
+    if(sem_close(sem) == -1)
+    {
+      if(errno == ENOENT)
+        return NULL;
+    }
     //}
     // opens its own FIFO
     int carFifo;
@@ -128,12 +137,18 @@ void *carThread(void *arg)
             updateLog(car, FULL, endTime - createTime, 0);
             break;
         }
+        else if(strcmp(input, CLOSED) == 0)
+        {
+            endTime = clock();
+            updateLog(car, CLOSED, endTime - createTime, 0);
+            break;
+        }
     }
 
 
     close(carFifo);
     unlink(car->fifoName);
-    fclose(gerador);
+    //fclose(gerador);
     free(car);
     return NULL;
 }

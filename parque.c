@@ -116,7 +116,6 @@ void *entrancePoints(void *arg)
         exit(5);
     }
 
-    int n;
     while (1) {
         if(sem_wait(semaphores[a]) == -1){
             if(errno != EINVAL)
@@ -129,8 +128,7 @@ void *entrancePoints(void *arg)
         }
 
         struct carInfo *vehicle = malloc(sizeof(struct carInfo));
-        n = read(fifofd, vehicle, sizeof(struct carInfo));
-        if(n > 0){
+        if(read(fifofd, vehicle, sizeof(struct carInfo)) > 0){
             pthread_t janitorThread;
             pthread_create(&janitorThread, NULL, janitor, vehicle);
         }
