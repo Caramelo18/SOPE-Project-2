@@ -249,5 +249,5 @@ int main(int argc, char* argv[])
         sem_close(entrances[i]);
     }
 
-    return 0;
+    pthread_exit(0);
 }

@@ -117,9 +117,8 @@ void *janitor(void *arg){
   sprintf(message, "out: %c%d - left:%d\n", car->direction, car->number, parkingSpaces);
 
   updateLog(car->number, OUT);
-
-  write(STDOUT_FILENO,message, strlen(message));
   pthread_mutex_unlock(&mutexParking);
+  write(STDOUT_FILENO,message, strlen(message));
 
   //fifofd = open(car->fifoName, O_WRONLY);
   if(write(fifofd, OUT, sizeof(OUT)) >0){
@@ -129,9 +128,11 @@ void *janitor(void *arg){
   unlink(car->fifoName);
 
   free(car);
+  pthread_mutex_lock(&mutexParking);
   if(closingTime == 1 && parkingSpaces == maxSpaces){
     pthread_cond_broadcast(&condEmpty);
   }
+  pthread_mutex_unlock(&mutexParking);
 
 
   return NULL;
