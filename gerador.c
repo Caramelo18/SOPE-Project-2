@@ -33,7 +33,19 @@ short closingTime = 0;
 //unsigned int durationPeriod;
 unsigned int minInterval;
 sem_t *entrances[NUM_ENTRANCES];
-struct carInfo * vehicle;
+
+void updateLog(struct carInfo *car, char message[], clock_t ticks, int start)
+{
+     FILE *file;
+     file = fopen(LOG, "a");
+     clock_t current = clock();
+     if(start == 1)
+        fprintf(file, "%9d;%9d;%8c;%12d;    ?    ; %5s\n", (int)ticks, car->number, car->direction, (int)car->parkingTime, message);
+    else
+        fprintf(file, "%9d;%9d;%8c;%12d;%9d;%5s\n", (int)current, car->number, car->direction, (int)car->parkingTime,  (int)ticks, message);
+    fclose(file);
+    return;
+}
 
 void *carThread(void *arg)
 {
@@ -45,6 +57,7 @@ void *carThread(void *arg)
     }
 
     struct carInfo *car = (struct carInfo *) arg;
+
 
     //printf("thr: car: %cA%d - time: %d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime, car.fifoName);
 
@@ -112,9 +125,9 @@ void *carThread(void *arg)
         printf("Open error %d %d\n", errno, EMFILE);
 
     int in = 0;
-    char message[25];
     char input[6];
     int i =0;
+    clock_t createTime, endTime;
     while(1)
     {
         if((i=read(carFifo, input, sizeof(input)) )> 0){
@@ -124,28 +137,21 @@ void *carThread(void *arg)
           printf("%d\n", errno);
         if(strcmp(input, OUT) == 0) // if car exits the park
         {
-            //time_t ticks = clock();
-            sprintf(message,"car %d out\n", car->number);
-            write(STDOUT_FILENO, message, strlen(message));
-
-            //fprintf(gerador, "%9d;%9d;%8c;%12d;    ?   ; out\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            endTime = clock();
+            printf("start: %d - end: %d - diff:%d\n", createTime, endTime, endTime - createTime);
+            updateLog(car, OUT, endTime - createTime, 0);
             break;
         }
         else if(strcmp(input, IN) == 0 && in == 0)
         {
-            //time_t ticks = clock();
-            sprintf(message,"car %d in\n", car->number);
-            write(STDOUT_FILENO, message, strlen(message));
-
-            //fprintf(gerador, "%9d;%9d;%8c;%12d;    ?   ; in\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            createTime = clock();
+            updateLog(car, IN, createTime, 1);
             in = 1;
         }
         else if(strcmp(input, FULL) == 0)
         {
-            //time_t ticks = clock();
-            sprintf(message,"car %d full\n", car->number);
-            write(STDOUT_FILENO, message, strlen(message));
-            //fprintf(gerador, "%9d;%9d;%8c;%12d;    ?   ; full\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            endTime = clock();
+            updateLog(car, FULL, endTime - createTime, 0);
             break;
         }
     }
@@ -183,7 +189,7 @@ int main(int argc, char* argv[])
 
     // clears gerador.log
     FILE *gerador = fopen("gerador.log", "w");
-    fprintf(gerador, "t(ticks) ; id_viat ; destin ; t_estacion ; t_vida ; observ\n" );
+    fprintf(gerador, "t(ticks) ; id_viat ; destin ; t_estacion ; t_vida  ; observ\n" );
     fclose(gerador);
 
     time_t t;
@@ -227,7 +233,7 @@ int main(int argc, char* argv[])
         if((end - begin) >= sleepTime)
         {
             //printf("%d    %d\n", (int)(end-begin), sleepTime);
-            vehicle = malloc(sizeof(struct carInfo));
+            struct carInfo *vehicle = malloc(sizeof(struct carInfo));
             index = rand() % 4;
             vehicle->direction = fifoNames[index];
             vehicle->parkingTime = ((rand() % 10) + 1) * minInterval;
