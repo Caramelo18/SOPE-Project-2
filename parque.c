@@ -41,11 +41,7 @@ int semIndex = 0;
 
 pthread_mutex_t mutexParking = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutexEntrance = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutexLog = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condEmpty = PTHREAD_COND_INITIALIZER;
-
-
-
 
 
 void alarm_handler(int signo)
@@ -57,14 +53,13 @@ void alarm_handler(int signo)
   }
 }
 
-void updateLog(int id, char message[]){
-  pthread_mutex_lock(&mutexLog);
+void updateLog(int id, char message[])
+{
   FILE *file;
   clock_t c = clock();
   file = fopen(LOG, "a");
   fprintf(file,"%7d  ; %5d ; %5d  ; %s\n", (int)c, parkingSpaces, id, message);
   fclose(file);
-  pthread_mutex_unlock(&mutexLog);
 }
 
 
@@ -79,11 +74,9 @@ void *janitor(void *arg){
   struct carInfo *car = arg;
 
   int fifofd;
-  //printf("%s\n", car->fifoName);
 
-  //do {
-    fifofd = open(car->fifoName, O_WRONLY);
-  //} while(fifofd == -1);
+  fifofd = open(car->fifoName, O_WRONLY);
+
   pthread_mutex_lock(&mutexParking);
   if(parkingSpaces == 0){
     printf("full: %d - left:%d\n", car->number, parkingSpaces);
@@ -96,9 +89,9 @@ void *janitor(void *arg){
   }
   parkingSpaces--;
   printf("in: %c%d - left:%d\n", car->direction, car->number, parkingSpaces);
+  updateLog(car->number, IN);
   pthread_mutex_unlock(&mutexParking);
   write(fifofd, IN, sizeof(IN));
-  updateLog(car->number, IN);
 
   clock_t start, end;
   start = clock();
@@ -110,6 +103,7 @@ void *janitor(void *arg){
   pthread_mutex_lock(&mutexParking);
   parkingSpaces++;
   write(fifofd, OUT, sizeof(OUT));
+  updateLog(car->number, OUT);
   printf("out: %d - left:%d\n", car->number, parkingSpaces);
   pthread_mutex_unlock(&mutexParking);
 
@@ -119,7 +113,6 @@ void *janitor(void *arg){
   if(closingTime == 1 && parkingSpaces == maxSpaces){
     pthread_cond_broadcast(&condEmpty);
   }
-  updateLog(car->number, OUT);
 
   free(car);
   return NULL;
@@ -140,7 +133,6 @@ void *entrancePoints(void *arg)
     printf("Error opening %s\n", fifoName);
     exit(4);
   }
-  //printf("%d\n", fifofd);
 
   pthread_mutex_lock(&mutexEntrance);
   int a = semIndex++;
@@ -151,25 +143,16 @@ void *entrancePoints(void *arg)
     printf("Error opening semaphore\n");
     exit(5);
   }
-  //struct carInfo car;
+
   int n;
   while (1){
     sem_wait(semaphores[a]);
-    //printf("%d\n", i);
-    //printf("%d\n", parkingSpaces);
 
-    if(closingTime == 1){
+    if(closingTime == 1)
+    {
       close(fifofd);
-      /*while(n > 0){
-        n = read(fifofd, &car, sizeof(struct carInfo));
-        printf("timeout car: %c%d - time: %d\n", car.direction, car.number, (int)car.parkingTime);
-      }*/
       sem_close(semaphores[a]);
-
       unlink(fifoName);
-      //printf("closing time\n");
-      //free(vehicle);
-      //printf("%s - %p\n", fifoName, vehicle);
       pthread_mutex_lock(&mutexParking);
       while(parkingSpaces != maxSpaces)
         pthread_cond_wait(&condEmpty, &mutexParking);
@@ -180,9 +163,6 @@ void *entrancePoints(void *arg)
     struct carInfo *vehicle = malloc(sizeof(struct carInfo));
 
     n = read(fifofd, vehicle, sizeof(struct carInfo));
-    if(n > 0){
-      //printf("%s  car: %c%d - time: %d\n", semName, vehicle->direction, vehicle->number, (int)vehicle->parkingTime);
-    }
     if(n <= 0 && closingTime == 0){
       continue;
     }
@@ -193,7 +173,8 @@ void *entrancePoints(void *arg)
 
 }
 
-int main(int argc, char* argv[]){
+int main(int argc, char* argv[])
+{
 
   if(argc != 3) {
     printf("Usage: parque <N_LUGARES> <T_ABERTURA>\n");
@@ -210,7 +191,7 @@ int main(int argc, char* argv[]){
   maxSpaces = parkingSpaces;
 
   // resets parque.log
-  FILE *parque = fopen("parque.log", "w");
+  FILE *parque = fopen(LOG, "w");
   fprintf(parque, "t(ticks) ; nlug ; id_viat ; observ\n");
   fclose(parque);
 
