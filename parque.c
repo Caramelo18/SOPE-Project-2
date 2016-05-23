@@ -58,8 +58,11 @@ void updateLog(int id, char message[])
   FILE *file;
   clock_t c = clock();
   file = fopen(LOG, "a");
-  fprintf(file,"%7d  ; %5d ; %5d  ; %s\n", (int)c, parkingSpaces, id, message);
+  char loga[40];
+  sprintf(loga,"%7d  ; %4d ; %5d  ; %s\n", (int)c, parkingSpaces, id, message);
+  //fwrite(file, loga, strlen(loga));
   fclose(file);
+  return;
 }
 
 
@@ -73,48 +76,64 @@ void *janitor(void *arg){
 
   struct carInfo *car = arg;
 
+  char message [35];
   int fifofd;
 
   fifofd = open(car->fifoName, O_WRONLY);
+  //write(STDOUT_FILENO, car->fifoName, strlen(car->fifoName));
+  //write(STDOUT_FILENO, "\n", 2);
 
   pthread_mutex_lock(&mutexParking);
   if(parkingSpaces == 0){
-    printf("full: %d - left:%d\n", car->number, parkingSpaces);
+    sprintf(message, "full: %d - left:%d\n", car->number, parkingSpaces);
+    write(STDOUT_FILENO,message, strlen(message));
+    updateLog(car->number, FULL);
     pthread_mutex_unlock(&mutexParking);
     write(fifofd, FULL, sizeof(FULL));
-    updateLog(car->number, FULL);
     close(fifofd);
     free(car);
     return NULL;
   }
   parkingSpaces--;
-  printf("in: %c%d - left:%d\n", car->direction, car->number, parkingSpaces);
+  //clock_t c = clock();
+  sprintf(message, " in: %c%d - left:%d\n", car->direction, car->number, parkingSpaces);
+  write(STDOUT_FILENO,message, strlen(message));
   updateLog(car->number, IN);
   pthread_mutex_unlock(&mutexParking);
   write(fifofd, IN, sizeof(IN));
+  //close(fifofd);
 
   clock_t start, end;
   start = clock();
   do{
     end = clock();
-  }while(end-start >= car->parkingTime);
+  }while(end-start <= car->parkingTime);
 
 
   pthread_mutex_lock(&mutexParking);
   parkingSpaces++;
-  write(fifofd, OUT, sizeof(OUT));
+
+  //clock_t o = clock();
+  sprintf(message, "out: %c%d - left:%d\n", car->direction, car->number, parkingSpaces);
+
   updateLog(car->number, OUT);
-  printf("out: %d - left:%d\n", car->number, parkingSpaces);
+
+  write(STDOUT_FILENO,message, strlen(message));
   pthread_mutex_unlock(&mutexParking);
 
+  //fifofd = open(car->fifoName, O_WRONLY);
+  if(write(fifofd, OUT, sizeof(OUT)) >0){
+    //printf("%s %s\n", car->fifoName, OUT);
+  }
   close(fifofd);
   unlink(car->fifoName);
 
+  free(car);
   if(closingTime == 1 && parkingSpaces == maxSpaces){
     pthread_cond_broadcast(&condEmpty);
   }
 
-  free(car);
+
   return NULL;
 }
 
@@ -136,7 +155,7 @@ void *entrancePoints(void *arg)
 
   pthread_mutex_lock(&mutexEntrance);
   int a = semIndex++;
-  semaphores[a] = sem_open(semName,O_CREAT,0600,0);
+  semaphores[a] = sem_open(semName,O_CREAT,0660,0);
   pthread_mutex_unlock(&mutexEntrance);
 
   if(semaphores[a] == SEM_FAILED){
