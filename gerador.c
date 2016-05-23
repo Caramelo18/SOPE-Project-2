@@ -12,11 +12,11 @@
 
 #define NAMESIZE 10
 #define NUM_ENTRANCES   4
-#define MAXTHREADS 3000
 
 #define FULL            "FULL"
 #define OUT             "OUT"
 #define IN              "IN"
+#define LOG             "gerador.log"
 
 const char SEM_NAME[] = "/sem";
 const char fifoNames[NUM_ENTRANCES] = {'N', 'S', 'E', 'W'};
@@ -30,13 +30,10 @@ struct carInfo
 };
 
 short closingTime = 0;
-unsigned int durationPeriod;
+//unsigned int durationPeriod;
 unsigned int minInterval;
 sem_t *entrances[NUM_ENTRANCES];
 struct carInfo * vehicle;
-
-
-struct carInfo carInfos[MAXTHREADS];
 
 void *carThread(void *arg)
 {
@@ -59,14 +56,19 @@ void *carThread(void *arg)
     int fd;
     //printf("%s\n", fifoName);
 
-    fd = open(fifoName, O_WRONLY | O_NONBLOCK);  //see O_NONBLOCK
+    fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
     if(fd == -1){
       if(errno == ENOENT){
         printf("Pipe isn't created yet\n");
         return NULL;
       }
+      /*else if(errno == EINTR){
+        printf("generator timeout\n");
+        free(car);
+        return NULL;
+      }*/
       printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
-      close(fd);
+      //close(fd);
       free(car);
       return NULL;
     }
@@ -88,20 +90,11 @@ void *carThread(void *arg)
 
 
     // open and write gerador.log
-    //char line[128];
-    FILE *gerador = fopen("gerador.log", "a");
+    FILE *gerador = fopen(LOG, "a");
     //time_t ticks = clock();
     //    sprintf(line, );
     //    fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
 
-    /*sem_t *sem;
-    sem = sem_open(semName,0,0600,0);
-    if(sem == SEM_FAILED){
-        //if(errno != EMFILE){
-          printf("Error opening semaphore %s %s  %d  %d   %d\n", semName,fifoName, errno,EMFILE, ENOENT);
-          //exit(4);
-        //}
-    }*/
     //else{
     int ind = 'A';
     if(car->direction == 'N')
@@ -133,21 +126,21 @@ void *carThread(void *arg)
         {
             time_t ticks = clock();
             printf("car %d out\n", car->number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; out\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            fprintf(gerador, "%9d;%9d;%9c;%9d;   ?; out\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             break;
         }
         else if(strcmp(input, IN) == 0 && in == 0)
         {
             time_t ticks = clock();
             printf("car %d in\n", car->number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; in\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            fprintf(gerador, "%9d;%9d;%9c;%9d;   ?; in\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             in = 1;
         }
         else if(strcmp(input, FULL) == 0)
         {
             time_t ticks = clock();
             printf("car %d full\n", car->number);
-            fprintf(gerador, "%-10d;%-10d;%-10c;%-10d;   ?; full\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
+            fprintf(gerador, "%9d;%9d;%9c;%9d;   ?; full\n", (int)ticks, car->number, car->direction, (int)car->parkingTime);
             break;
         }
     }
@@ -174,7 +167,7 @@ int main(int argc, char* argv[])
         printf("Usage: %s <T_GERACAO> <U_RELOGIO>\n", argv[0]);
         exit(1);
     }
-
+    int durationPeriod;
     durationPeriod = strtol(argv[1], NULL, 10);
     minInterval = strtol(argv[2],NULL,10);
 
@@ -186,6 +179,7 @@ int main(int argc, char* argv[])
 
     // clears gerador.log
     FILE *gerador = fopen("gerador.log", "w");
+    fprintf(gerador, "t(ticks) ; id_viat ; destin ; t_estacion ; t_vida ; observ\n" );
     fclose(gerador);
 
     time_t t;
@@ -228,14 +222,14 @@ int main(int argc, char* argv[])
         end = clock();
         if((int)(end - begin) >= (int)sleepTime)
         {
-          printf("%d    %d\n", (int)(end-begin), sleepTime);
+            //printf("%d    %d\n", (int)(end-begin), sleepTime);
             vehicle = malloc(sizeof(struct carInfo));
             index = rand() % 4;
             vehicle->direction = fifoNames[index];
             //printf("%c\n", vehicle->direction);
             //++carNumber;
             vehicle->parkingTime = ((rand() % 10) + 1) * minInterval;
-            printf("%lu\n", (unsigned long)vehicle->parkingTime/CLOCKS_PER_SEC);
+            //printf("%lu\n", (unsigned long)vehicle->parkingTime/CLOCKS_PER_SEC);
             //char carFifoName[15];
             sprintf(vehicle->fifoName, "fifo%c%d", vehicle->direction, carNumber);
 
