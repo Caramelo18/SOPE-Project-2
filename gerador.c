@@ -40,8 +40,6 @@ void *carThread(void *arg)
 
     sem_t * sem = sem_open(semName,0, 0600, 1);
     if(sem == SEM_FAILED){
-      if(errno != ENOENT)
-          printf("ola1 %d\n", errno);
       free(car);
       return NULL;
 
@@ -102,7 +100,7 @@ void *carThread(void *arg)
     int i =0;
     while(1)
     {
-        if((i=read(carFifo, input, sizeof(input)) ) <= 0){
+        if((i=read(carFifo, input, sizeof(input)) ) <  0){
           printf("error reading from carFifo %s\n", car->fifoName);
         }
 
