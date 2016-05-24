@@ -27,6 +27,8 @@ void *carThread(void *arg)
         exit(1);
     }
 
+    clock_t createTime, endTime;
+    createTime = clock();
     struct carInfo *car = (struct carInfo *) arg;
     //printf("thr: car: %cA%d - time: %d - own fifo: %s\n", car.direction, car.number, (int)car.parkingTime, car.fifoName);
 
@@ -110,7 +112,6 @@ void *carThread(void *arg)
     int in = 0;
     char input[6];
     int i =0;
-    clock_t createTime, endTime;
     while(1)
     {
         if((i=read(carFifo, input, sizeof(input)) )> 0){
@@ -121,17 +122,16 @@ void *carThread(void *arg)
         if(strstr(input, OUT) != NULL && in == 1) // if car exits the park
         {
             endTime = clock();
-            printf("start: %d - end: %d - diff:%d\n", (int)createTime, (int)endTime, (int)(endTime - createTime));
+        //    printf("start: %d - end: %d - diff:%d\n", (int)createTime, (int)endTime, (int)(endTime - createTime));
             updateLog(car, OUT, endTime - createTime, 0);
             break;
         }
         else if(strstr(input, IN) != NULL && in == 0)
         {
-            createTime = clock();
             updateLog(car, IN, createTime, 1);
             in = 1;
         }
-        else if(strstr(input, FULL) != NULL && in == 1)
+        else if(strstr(input, FULL) != NULL)
         {
             endTime = clock();
             updateLog(car, FULL, endTime - createTime, 0);
