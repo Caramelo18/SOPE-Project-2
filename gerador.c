@@ -118,26 +118,26 @@ void *carThread(void *arg)
         }
         else if(i == -1)
           printf("%d\n", errno);
-        if(strcmp(input, OUT) == 0) // if car exits the park
+        if(strstr(input, OUT) != NULL && in == 1) // if car exits the park
         {
             endTime = clock();
             printf("start: %d - end: %d - diff:%d\n", (int)createTime, (int)endTime, (int)(endTime - createTime));
             updateLog(car, OUT, endTime - createTime, 0);
             break;
         }
-        else if(strcmp(input, IN) == 0 && in == 0)
+        else if(strstr(input, IN) != NULL && in == 0)
         {
             createTime = clock();
             updateLog(car, IN, createTime, 1);
             in = 1;
         }
-        else if(strcmp(input, FULL) == 0)
+        else if(strstr(input, FULL) != NULL && in == 1)
         {
             endTime = clock();
             updateLog(car, FULL, endTime - createTime, 0);
             break;
         }
-        else if(strcmp(input, CLOSED) == 0)
+        else if(strstr(input, CLOSED) != NULL && in == 1)
         {
             endTime = clock();
             updateLog(car, CLOSED, endTime - createTime, 0);
