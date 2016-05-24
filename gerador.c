@@ -4,17 +4,20 @@
 
 short closingTime = 0;
 unsigned int minInterval;
-//sem_t *entrances[NUM_ENTRANCES];
+pthread_mutex_t mutexLog = PTHREAD_MUTEX_INITIALIZER;
+FILE *file;
 
 void updateLog(struct carInfo *car, char message[], clock_t ticks, int start)
 {
-     FILE *file = fopen(LOG, "a");
      clock_t current = clock();
+     pthread_mutex_lock(&mutexLog);
+     file = fopen(LOG, "a");
      if(start == 1)
-        fprintf(file, "%9d;%9d;%8c;%12d;    ?    ; %5s\n", (int)ticks, car->number, car->direction, (int)car->parkingTime, message);
+        fprintf(file, "%9d;%9d;%8c;%12d;    ?    ; %5s\n", (int)current, car->number, car->direction, (int)car->parkingTime, message);
     else
         fprintf(file, "%9d;%9d;%8c;%12d;%9d;%5s\n", (int)current, car->number, car->direction, (int)car->parkingTime,  (int)ticks, message);
     fclose(file);
+    pthread_mutex_unlock(&mutexLog);
     return;
 }
 
@@ -37,37 +40,36 @@ void *carThread(void *arg)
 
     sem_t * sem = sem_open(semName,0, 0600, 1);
     if(sem == SEM_FAILED){
-      if(errno == ENOENT){
-          free(car);
-          return NULL;
-        }
+      if(errno != ENOENT)
+          printf("ola1 %d\n", errno);
+      free(car);
+      return NULL;
+
     }
     // open the correct FIFO
     sprintf(fifoName, "fifo%c", car->direction);
     int fd;
     //printf("%s\n", fifoName);
 
-    fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
+    fd = open(fifoName, O_WRONLY | O_NONBLOCK);  //see O_NONBLOCK
     if(fd == -1){
-        if(errno == ENOENT){
-        }
-        else{
-            printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
-        }
+        sem_close(sem);
         free(car);
         return NULL;
     }
 
     //printf("%c%-10d - %-10d - own fifo: %s\n", car->direction, car->number, (int)car->parkingTime,car->fifoName);
-    if(mkfifo(car->fifoName, 0660) == -1)
-        printf("Make fifo error %s     %d   %d \n", car->fifoName, errno, EEXIST);
 
     // passes the car information to the park
+
+    if(mkfifo(car->fifoName, 0660) == -1)
+        printf("Make fifo error %s     %d   %d \n", car->fifoName, errno, EEXIST);
 
     if(write(fd, car, sizeof(struct carInfo)) == -1)
     {
       printf("write error car%d  %d  %d\n", car->number, errno, EBADF);
       close(fd);
+      sem_close(sem);
       unlink(car->fifoName);
       free(car);
       return NULL;
@@ -88,24 +90,30 @@ void *carThread(void *arg)
     //     ind = 2;
     // else if(car->direction == 'W')
     //     ind = 3;
-    // if(sem_post(sem) == -1){
-    //     if(errno == ENOENT)
-    //       return NULL;
-    // }
+
     sem_post(sem);
 
     if(sem_close(sem) == -1)
     {
-      if(errno == ENOENT)
+      if(errno == ENOENT){
+        free(car);
+        unlink(car->fifoName);
         return NULL;
+
+      }
     }
+
     //}
     // opens its own FIFO
     int carFifo;
     carFifo = open(car->fifoName, O_RDONLY);
-    if(carFifo == -1)
+    if(carFifo == -1){
         printf("Open error %d %d\n", errno, EMFILE);
-
+        free(car);
+        unlink(car->fifoName);
+        return NULL;
+    }
+    printf("Park opened %s\n", car->fifoName);
     int in = 0;
     char input[8];
     int i =0;
@@ -116,17 +124,18 @@ void *carThread(void *arg)
         }
         else if(i == -1)
           printf("%d\n", errno);
-        if(strstr(input, OUT) != NULL && in == 1) // if car exits the park
+
+        if(strstr(input, IN) != NULL && in == 0)
+        {
+            updateLog(car, IN, createTime, 1);
+            in = 1;
+        }
+        else if(strstr(input, OUT) != NULL) // if car exits the park
         {
             endTime = clock();
         //    printf("start: %d - end: %d - diff:%d\n", (int)createTime, (int)endTime, (int)(endTime - createTime));
             updateLog(car, OUT, endTime - createTime, 0);
             break;
-        }
-        else if(strstr(input, IN) != NULL && in == 0)
-        {
-            updateLog(car, IN, createTime, 1);
-            in = 1;
         }
         else if(strstr(input, FULL) != NULL)
         {
@@ -172,9 +181,9 @@ int main(int argc, char* argv[])
     }
 
     // clears gerador.log
-    FILE *gerador = fopen("gerador.log", "w");
-    fprintf(gerador, "t(ticks) ; id_viat ; destin ; t_estacion ; t_vida  ; observ\n" );
-    fclose(gerador);
+    file = fopen("gerador.log", "w");
+    fprintf(file, "t(ticks) ; id_viat ; destin ; t_estacion ; t_vida  ; observ\n" );
+    fclose(file);
 
     time_t t;
     srand((unsigned) time(&t));
@@ -210,13 +219,16 @@ int main(int argc, char* argv[])
             vehicle->direction = fifoNames[index];
             vehicle->parkingTime = ((rand() % 10) + 1) * minInterval;
             vehicle->number = ++carNumber;
-            sprintf(vehicle->fifoName, "fifo%c%d", vehicle->direction, carNumber);
-            sleepTime = probabilities[rand() % 10] * minInterval;
+            sprintf(vehicle->fifoName, "fifo%c%d", vehicle->direction, vehicle->number);
+
             //printf("car: %c%d - time: %d\n", direction, carNumber, parkTime);
             //printf("next %d    duration %d   elapsed %lu\n", sleepTime, (int)vehicle->parkingTime, (long) (end-begin));
             pthread_t newThread;
             pthread_create(&newThread, NULL, carThread, (void *)vehicle);
+
             begin = end;
+            sleepTime = probabilities[rand() % 10] * minInterval;
+
         }
     }
 
