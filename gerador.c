@@ -35,10 +35,12 @@ void *carThread(void *arg)
     char fifoName[15], semName[15];
     sprintf(semName, "%s%c", SEM_NAME, car->direction);
 
-    sem_t * sem = sem_open(semName,0, 0600, 0);
+    sem_t * sem = sem_open(semName,0, 0600, 1);
     if(sem == SEM_FAILED){
-        if(errno == ENOENT)
+      if(errno == ENOENT){
+          free(car);
           return NULL;
+        }
     }
     // open the correct FIFO
     sprintf(fifoName, "fifo%c", car->direction);
@@ -48,16 +50,10 @@ void *carThread(void *arg)
     fd = open(fifoName, O_WRONLY);  //see O_NONBLOCK
     if(fd == -1){
         if(errno == ENOENT){
-            printf("Pipe isn't created yet\n");
-            return NULL;
         }
-        /*else if(errno == EINTR){
-            printf("generator timeout\n");
-            free(car);
-            return NULL;
-        }*/
-        printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
-        //close(fd);
+        else{
+            printf("Main fifos error %s %d  %d  %d\n", fifoName, car->number, errno , ENXIO  );
+        }
         free(car);
         return NULL;
     }
@@ -72,6 +68,7 @@ void *carThread(void *arg)
     {
       printf("write error car%d  %d  %d\n", car->number, errno, EBADF);
       close(fd);
+      unlink(car->fifoName);
       free(car);
       return NULL;
     }
@@ -110,7 +107,7 @@ void *carThread(void *arg)
         printf("Open error %d %d\n", errno, EMFILE);
 
     int in = 0;
-    char input[6];
+    char input[8];
     int i =0;
     while(1)
     {
@@ -137,7 +134,7 @@ void *carThread(void *arg)
             updateLog(car, FULL, endTime - createTime, 0);
             break;
         }
-        else if(strstr(input, CLOSED) != NULL && in == 1)
+        else if(strstr(input, CLOSED) != NULL)
         {
             endTime = clock();
             updateLog(car, CLOSED, endTime - createTime, 0);
@@ -145,10 +142,8 @@ void *carThread(void *arg)
         }
     }
 
-
     close(carFifo);
     unlink(car->fifoName);
-    //fclose(gerador);
     free(car);
     return NULL;
 }
